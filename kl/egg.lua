@@ -1,6 +1,5 @@
 --loadstring(game:HttpGet("https://raw.githubusercontent.com/zearx/r-g/refs/heads/main/kl/play.lua"))()
 
-task.wait(5)
 _G.hop        = true
 _G.check      = false
 _G.autoStart  = true
