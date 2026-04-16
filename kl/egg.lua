@@ -198,7 +198,7 @@ local function buildUI()
     local title = Instance.new("TextLabel")
     title.Size             = UDim2.new(1, 0, 0, 30)
     title.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    title.Text             = "Egg Script ()"
+    title.Text             = "Egg Script"
     title.TextColor3       = Color3.fromRGB(255, 255, 255)
     title.Font             = Enum.Font.GothamBold
     title.TextSize         = 14
