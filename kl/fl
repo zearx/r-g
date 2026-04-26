@@ -1,0 +1,214 @@
+
+local player = game:GetService("Players").LocalPlayer
+local HttpService = game:GetService("HttpService")
+local TPS = game:GetService("TeleportService")
+local VIM = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
+
+local CONFIG = {
+    CheckBoss = true, 
+    CheckTime = true,
+}
+
+local function isEventActive()
+
+    if workspace:FindFirstChild("Whirlpool") or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Whirlpool")) then return true end
+
+    if workspace:FindFirstChild("Areas") and workspace.Areas:FindFirstChild("SerpentLocation") then return true end
+    if workspace:FindFirstChild("Monster") and workspace.Monster:FindFirstChild("Boss") and workspace.Monster.Boss:FindFirstChild("Serpent") then return true end
+
+    if workspace:FindFirstChild("SeaMonster") and workspace.SeaMonster:FindFirstChild("SeaDragon") then return true end
+    if workspace:FindFirstChild("Island") and workspace.Island:FindFirstChild("SeaDragonLocation") then return true end
+
+    if workspace:FindFirstChild("SeaMonster") and workspace.SeaMonster:FindFirstChild("ThirdSeaDragon") then return true end
+
+    if workspace:FindFirstChild("Monster") and workspace.Monster:FindFirstChild("Boss") and workspace.Monster.Boss:FindFirstChild("FuryTentacle") then return true end
+
+    return false
+end
+
+local function isWaitTimeUnder10Mins()
+    local ok, label = pcall(function()
+        return player.PlayerGui.MainGui.StarterFrame.LegacyPoseFrame.ThirdSea.TextLabel
+    end)
+    if not ok or not label then return false end
+
+    local parts = {}
+    for n in label.Text:gmatch("%d+") do parts[#parts + 1] = tonumber(n) end
+    local mins = 0
+    if #parts == 3 then
+        mins = parts[1] * 60 + parts[2] + parts[3] / 60
+    elseif #parts == 2 then
+        mins = parts[1] + parts[2] / 60
+    elseif #parts == 1 then
+        mins = parts[1]
+    end
+
+    return mins < 10
+end
+
+local function sendKey(key, state)
+    VIM:SendKeyEvent(state, key, false, game)
+end
+
+local function doPlayLogic()
+ task.wait(0.2)
+    sendKey(Enum.KeyCode.BackSlash, true)
+    task.wait(0.1)
+    sendKey(Enum.KeyCode.BackSlash, false)
+    task.wait(0.3)
+
+    if not GuiService.SelectedObject then
+        local t = 0
+        repeat
+            task.wait(0.1)
+            t = t + 0.1
+        until GuiService.SelectedObject or t >= 1
+    end
+
+    sendKey(Enum.KeyCode.Return, true)
+    task.wait(0.1)
+    sendKey(Enum.KeyCode.Return, false)
+
+    task.wait(0.2)
+    sendKey(Enum.KeyCode.BackSlash, true)
+    task.wait(0.1)
+    sendKey(Enum.KeyCode.BackSlash, false)
+
+    task.wait(2) 
+end
+
+local function teleportTo(cframe)
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    hrp.Velocity = Vector3.zero
+    hrp.RotVelocity = Vector3.zero
+    hrp.CFrame = cframe
+end
+
+local function captureFlags()
+    local flagFolder = workspace:FindFirstChild("FlagConquest")
+    if not flagFolder then return end
+
+    for i = 1, 9 do
+        local flagName = "FlagConquest" .. tostring(i)
+        local flag = flagFolder:FindFirstChild(flagName)
+
+        if flag then
+            local pivot = flag:GetPivot()
+            local isCooldown = false
+
+            while not isCooldown do
+                local char = player.Character
+                local hum = char and char:FindFirstChild("Humanoid")
+
+                if not hum or hum.Health <= 0 then
+                    task.wait(1)
+                    continue
+                end
+
+                teleportTo(pivot)
+
+                local beam = flag:FindFirstChild("Beam")
+                local billboard = beam and beam:FindFirstChild("BillboardGui")
+                local textLabel = billboard and billboard:FindFirstChild("TextLabel")
+
+                if textLabel and textLabel.Text == "< ON COOLDOWN >" then
+                    isCooldown = true
+                else
+                    task.wait(0.2) 
+                end
+            end
+        end
+    end
+end
+
+local function hopServer()
+    if CONFIG.CheckBoss and isEventActive() then
+        warn("[Auto Flag] Boss or Event is active! Halting hop server.")
+        return
+    end
+    if CONFIG.CheckTime and isWaitTimeUnder10Mins() then
+        warn("[Auto Flag] Event wait time is under 10 minutes! Halting hop server.")
+        return
+    end
+
+    local placeId = game.PlaceId
+    local hour    = os.date("!*t").hour
+    local visited = {}
+    local cursor  = ""
+
+    local ok      = pcall(function()
+        visited = HttpService:JSONDecode(readfile("KL_NotSameServers.json"))
+    end)
+    if not ok then
+        visited = { hour }
+        pcall(function() writefile("KL_NotSameServers.json", HttpService:JSONEncode(visited)) end)
+    end
+
+    local function scan()
+        local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100%s")
+            :format(placeId, cursor ~= "" and ("&cursor=" .. cursor) or "")
+
+        local rawOk, raw = pcall(game.HttpGet, game, url)
+        if not rawOk then return false end
+
+        local jsonOk, data = pcall(HttpService.JSONDecode, HttpService, raw)
+        if not jsonOk or type(data) ~= "table" or type(data.data) ~= "table" then return false end
+
+        cursor = (data.nextPageCursor and data.nextPageCursor ~= "null") and data.nextPageCursor or ""
+
+        local servers = data.data
+
+        for i = #servers, 2, -1 do
+            local j = math.random(i)
+            servers[i], servers[j] = servers[j], servers[i]
+        end
+
+        for _, s in ipairs(servers) do
+            if type(s) ~= "table" then continue end
+            local id      = tostring(s.id or "")
+            local playing = tonumber(s.playing) or 0
+            local cap     = tonumber(s.maxPlayers) or 0
+
+
+            if playing >= cap or id == "" or id == game.JobId then continue end
+
+            if #visited > 0 and tonumber(visited[1]) ~= tonumber(hour) then
+                visited = { hour }
+                pcall(function() delfile("KL_NotSameServers.json") end)
+            end
+
+            local seen = false
+            for i = 2, #visited do
+                if tostring(visited[i]) == id then
+                    seen = true; break
+                end
+            end
+
+            if not seen then
+                visited[#visited + 1] = id
+                pcall(function() writefile("KL_NotSameServers.json", HttpService:JSONEncode(visited)) end)
+                local tpOk = pcall(TPS.TeleportToPlaceInstance, TPS, placeId, id, player)
+                if tpOk then return true end
+            end
+        end
+        return false
+    end
+
+    while not scan() do
+        task.wait(1)
+        if cursor == "" then break end
+    end
+end
+
+task.wait(0.1)
+task.spawn(function()
+	task.wait(1)
+    doPlayLogic()
+    captureFlags()
+    hopServer()
+end)
